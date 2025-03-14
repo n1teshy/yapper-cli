@@ -9,11 +9,17 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"golang.org/x/term"
 )
+
+const OS_WINDOWS = "windows"
+const OS_LINUX = "linux"
+const OS_DARWIN = "darwin"
 
 func getTermWidth() (int, error) {
 	width, _, err := term.GetSize(int(os.Stdout.Fd()))
@@ -145,5 +151,69 @@ func UnpackTarGz(src string, dest string) error {
 
 		}
 	}
+	return nil
+}
+
+func handleUnsupportedOS() {
+	fmt.Println("Your platform is not yet supported.")
+	fmt.Println("EXITING!")
+	os.Exit(0)
+}
+
+func InstallPiper() error {
+	var appDir string
+	OS, arch := runtime.GOOS, runtime.GOARCH
+
+	if OS == OS_WINDOWS {
+		appDir = os.Getenv("APPDATA")
+	} else if OS == OS_LINUX {
+		usr, err := user.Current()
+		if err != nil {
+			return err
+		}
+		appDir = filepath.Join(usr.HomeDir, ".config")
+	} else if OS == OS_DARWIN {
+		usr, err := user.Current()
+		if err != nil {
+			return err
+		}
+		appDir = filepath.Join(usr.HomeDir, "Library/Application Support")
+	} else {
+		handleUnsupportedOS()
+	}
+	appDir = filepath.Join(appDir, "yapper-cli")
+	_, err := os.Stat(filepath.Join(appDir, "piper"))
+	if err == nil || !os.IsNotExist(err) {
+		return err
+	}
+	os.MkdirAll(appDir, 0755)
+
+	fmt.Println("installing piper...")
+	zipUrl := "https://github.com/rhasspy/piper/releases/download/2023.11.14-2"
+	zipPath := filepath.Join(appDir, "piper.zip")
+
+	if OS == OS_LINUX {
+		if arch == "aarch64" || arch == "arm64" {
+			zipUrl += "/piper_linux_aarch64.tar.gz"
+		} else if arch == "armv7l" || arch == "armv7" {
+			zipUrl += "/piper_linux_armv7l.tar.gz"
+		} else {
+			zipUrl += "/piper_linux_x86_64.tar.gz"
+		}
+	} else if OS == OS_WINDOWS {
+		zipUrl += "/piper_windows_amd64.zip"
+	} else {
+		zipUrl += "/piper_macos_x64.tar.gz"
+	}
+
+	Download(zipUrl, zipPath)
+
+	if OS == OS_WINDOWS {
+		Unzip(zipPath, appDir)
+	} else {
+		UnpackTarGz(zipPath, appDir)
+	}
+
+	os.Remove(zipPath)
 	return nil
 }
